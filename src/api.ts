@@ -24,13 +24,8 @@ export async function api<T>(path: string, init: RequestInit = {}, authenticated
   return response.json() as Promise<T>;
 }
 
-export async function protectedDownload(slug: string, filename: string): Promise<void> {
-  const { data } = await supabase.auth.getSession();
-  if (!data.session?.access_token) throw new ApiError(401, "SIGN_IN_REQUIRED");
-  const popup = window.open("about:blank", "_blank", "noopener");
-  const response = await fetch(apiUrl(`/content/${encodeURIComponent(slug)}`), { headers: { Authorization: `Bearer ${data.session.access_token}` } });
-  if (!response.ok) { popup?.close(); const data = await response.json().catch(() => ({})) as { error?: unknown }; throw new ApiError(response.status, typeof data.error === "string" ? data.error : "CONTENT_UNAVAILABLE"); }
-  const link = await response.json() as { signed_url: string; expires_in_seconds: number; filename: string };
-  if (!link.signed_url || link.expires_in_seconds > 60) { popup?.close(); throw new ApiError(500, "CONTENT_LINK_UNAVAILABLE"); }
-  if (popup) popup.location.replace(link.signed_url); else window.location.assign(link.signed_url);
+export async function privateAudioUrl(activityId: string): Promise<string> {
+  const result = await api<{ signed_url: string; expires_in_seconds: number }>(`/learning/activities/${activityId}/audio`, {}, true);
+  if (!result.signed_url || result.expires_in_seconds > 60) throw new ApiError(500, "AUDIO_LINK_UNAVAILABLE");
+  return result.signed_url;
 }
