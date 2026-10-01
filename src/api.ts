@@ -30,17 +30,21 @@ export async function privateAudioUrl(activityId: string): Promise<string> {
   return result.signed_url;
 }
 
-export async function couponAdmin<T>(method: "GET" | "POST", body?: unknown): Promise<T> {
+export async function couponAdmin<T>(method: "GET" | "POST", body?: any): Promise<T> {
   const { data } = await supabase.auth.getSession();
   if (!data.session?.access_token) throw new ApiError(401, "SIGN_IN_REQUIRED");
-  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/coupon-admin-api`, {
-    method,
-    headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session.access_token}` },
-    body: body === undefined ? undefined : JSON.stringify(body),
+  if (method === "GET") {
+    const { data: rows, error } = await supabase.rpc("admin_list_coupons");
+    if (error) throw new ApiError(400, error.message.split(" \n")[0] || "COUPONS_UNAVAILABLE");
+    return { coupons: rows ?? [] } as T;
+  }
+  const { data: row, error } = await supabase.rpc("admin_create_coupon", {
+    p_code: body?.code ?? "", p_grant_days: Number(body?.grant_days ?? 30),
+    p_max_redemptions: body?.max_redemptions ?? null,
+    p_valid_until: body?.valid_until ? `${body.valid_until}T23:59:59Z` : null,
   });
-  const payload = await response.json().catch(() => ({})) as { error?: unknown };
-  if (!response.ok) throw new ApiError(response.status, typeof payload.error === "string" ? payload.error : "REQUEST_FAILED");
-  return payload as T;
+  if (error) throw new ApiError(400, error.message.split(" \n")[0] || "COUPON_CREATE_FAILED");
+  return row as T;
 }
 
 export async function couponRedeem<T>(code: string): Promise<T> {
