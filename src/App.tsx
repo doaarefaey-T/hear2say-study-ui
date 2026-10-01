@@ -133,7 +133,7 @@ function Courses({ courses, dashboard, onCourse, loadingSlug }: { courses: Publi
 }
 
 function CourseScreen({ course, dashboard, onBack, onLesson, onMembership }: { course: CourseDetail; dashboard: DashboardData | null; onBack: () => void; onLesson: (id: string) => void; onMembership: () => void }) {
-  return <main className="platform-main course-screen"><Topbar title={course.title} subtitle={`${course.level} · Course`} dashboard={dashboard} onMenu={() => {}}/><button className="back-inline" onClick={onBack}><ArrowRight size={16}/> العودة للمسارات</button><section className="course-cover"><div><span className="eyebrow">{course.level} LEARNING PATH</span><h2>{course.title}</h2><p>{course.description}</p><div className="course-meta"><span><Clock3 size={15}/> وحدات قصيرة</span><span><BookOpen size={15}/> {course.units.length} وحدة</span><span><Headphones size={15}/> صوت داخل الدروس</span></div></div><div className="course-outcome"><Sparkles size={20}/><strong>هدف المسار</strong><p>{course.learning_outcome}</p></div></section><section className="unit-list"><div className="section-label"><h2>الوحدات والدروس</h2><span>{dashboard?.entitlement.active ? "العضوية فعّالة" : "استعرضي الهيكل · فعّلي العضوية للبدء"}</span></div>{course.units.map((unit) => <article className={unit.is_pilot ? "unit-card is-pilot" : "unit-card"} key={unit.id}><div className="unit-index">{String(unit.unit_number).padStart(2, "0")}</div><div className="unit-intro"><span>{unit.lessons.some((lesson) => lesson.available) ? "INTERACTIVE LESSON" : "READY TO UNLOCK"}</span><h3>{unit.title}</h3><p>{unit.focus}</p><small>{unit.grammar_topic}</small></div><div className="lesson-stack">{unit.lessons.length ? unit.lessons.map((lesson) => <div className={lesson.available ? "lesson-row unlocked" : "lesson-row"} key={lesson.id}><span className="lesson-state">{lesson.available ? <Play size={14}/> : <Lock size={14}/>}</span><div><strong>{lesson.title}</strong><small>{lesson.activity_count || 7} أنشطة · {lesson.estimated_minutes} دقيقة</small></div>{lesson.available ? <button onClick={() => onLesson(lesson.id)}>ابدئي <ArrowLeft size={15}/></button> : <button onClick={onMembership}>{lesson.locked_reason === "COMING_SOON" ? "قريباً" : "فعّلي الاشتراك"}</button>}</div>) : <div className="lesson-row"><span className="lesson-state"><Lock size={14}/></span><div><strong>درس تفاعلي قيد الإعداد</strong><small>سيظهر هنا، وليس كملف أو تنزيل</small></div></div>}</div></article>)}</section></main>;
+  return <main className="platform-main course-screen"><Topbar title={course.title} subtitle={`${course.level} · Course`} dashboard={dashboard} onMenu={() => {}}/><button className="back-inline" onClick={onBack}><ArrowRight size={16}/> العودة للمسارات</button><section className="course-cover"><div><span className="eyebrow">{course.level} LEARNING PATH</span><h2>{course.title}</h2><p>{course.description}</p><div className="course-meta"><span><Clock3 size={15}/> وحدات قصيرة</span><span><BookOpen size={15}/> {course.units.length} وحدة</span><span><Headphones size={15}/> صوت داخل الدروس</span></div></div><div className="course-outcome"><Sparkles size={20}/><strong>هدف المسار</strong><p>{course.learning_outcome}</p></div></section><section className="unit-list"><div className="section-label"><h2>الوحدات والدروس</h2><span>{dashboard?.entitlement.active ? "العضوية فعّالة" : "استعرضي الهيكل · فعّلي العضوية للبدء"}</span></div>{course.units.map((unit) => <article className={unit.is_pilot ? "unit-card is-pilot" : "unit-card"} key={unit.id}><div className="unit-index">{String(unit.unit_number).padStart(2, "0")}</div><div className="unit-intro"><span>{unit.lessons.some((lesson) => lesson.available) ? "INTERACTIVE LESSON" : "READY TO UNLOCK"}</span><h3>{unit.title}</h3><p>{unit.focus}</p><small>{unit.grammar_topic}</small></div><div className="lesson-stack">{unit.lessons.length ? unit.lessons.map((lesson) => <div className={lesson.available && Boolean(dashboard?.entitlement.active) ? "lesson-row unlocked" : "lesson-row"} key={lesson.id}><span className="lesson-state">{lesson.available ? <Play size={14}/> : <Lock size={14}/>}</span><div><strong>{lesson.title}</strong><small>{lesson.activity_count || 7} أنشطة · {lesson.estimated_minutes} دقيقة</small></div>{lesson.available && Boolean(dashboard?.entitlement.active) ? <button onClick={() => onLesson(lesson.id)}>ابدئي <ArrowLeft size={15}/></button> : <button onClick={onMembership}>{lesson.locked_reason === "COMING_SOON" ? "قريباً" : "فعّلي الاشتراك"}</button>}</div>) : <div className="lesson-row"><span className="lesson-state"><Lock size={14}/></span><div><strong>درس تفاعلي قيد الإعداد</strong><small>سيظهر هنا، وليس كملف أو تنزيل</small></div></div>}</div></article>)}</section></main>;
 }
 
 function AudioPlayer({ activityId }: { activityId: string }) {
@@ -333,21 +333,26 @@ export default function App() {
   async function navigate(next: View) { if (["dashboard", "admin", "placement"].includes(next) && !dashboard) { setAuthOpen(true); return; } if (next === "admin" && dashboard?.profile.role !== "admin") return; setView(next); }
   async function openCourse(slug: string) {
     const cacheKey = `hear2say:course:${slug}`;
-    try {
-      const cached = sessionStorage.getItem(cacheKey);
-      if (cached) { setCourse(JSON.parse(cached) as CourseDetail); setView("course"); return; }
-    } catch { /* ignore stale browser cache */ }
+    // Never reuse a course detail cached by another authenticated account.
+    // Public visitors may use the cache, but paid session data must always come
+    // from the server for the current access token.
+    if (!dashboard) {
+      try {
+        const cached = sessionStorage.getItem(cacheKey);
+        if (cached) { setCourse(JSON.parse(cached) as CourseDetail); setView("course"); return; }
+      } catch { /* ignore stale browser cache */ }
+    }
     setCourseLoading(slug); setNotice("");
     try {
       const detail = await api<{ course: CourseDetail }>(`/learning/courses/${slug}`, {}, Boolean(dashboard));
-      sessionStorage.setItem(cacheKey, JSON.stringify(detail.course));
+      if (!dashboard) sessionStorage.setItem(cacheKey, JSON.stringify(detail.course));
       setCourse(detail.course); setView("course");
     } catch (e) { setNotice(say(e)); }
     finally { setCourseLoading(null); }
   }
   async function openLesson(id: string) { if (!dashboard) { setAuthOpen(true); return; } if (!dashboard.entitlement.active) { setView("membership"); return; } try { const data = await api<LessonData>(`/learning/lessons/${id}`, {}, true); setLesson(data); setView("lesson"); } catch (e) { setNotice(say(e)); } }
   async function signedIn() { const current = await loadDashboard(); setView(current ? "dashboard" : "landing"); }
-  async function logout() { await supabase.auth.signOut(); setDashboard(null); setCourse(null); setLesson(null); setView("landing"); }
+  async function logout() { await supabase.auth.signOut(); sessionStorage.clear(); setDashboard(null); setCourse(null); setLesson(null); setView("landing"); }
   if (loading) return localize(<div className="page-loader"><Sparkles size={19}/> تجهيز مساحة التعلّم...</div>);
   if (!settings || bootFailed) return localize(<div className="startup-error"><span className="brand-mark">H<span>2</span>S</span><h1>تعذر فتح المنصة الآن</h1><p>تحققي من اتصالك بالإنترنت ثم أعيدي المحاولة.</p><button className="primary-cta" onClick={() => void refresh()}><RefreshCcw size={16}/> إعادة المحاولة</button></div>);
   if (view === "landing") return localize(<>{notice && <p className="global-notice">{notice}</p>}<Landing courses={courses} settings={settings} onAuth={() => setAuthOpen(true)} onCourses={() => setView("courses")} onCourse={openCourse} onMembership={() => setView("membership")}/>{authOpen && <AuthDialog onClose={() => setAuthOpen(false)} onReady={signedIn}/>}</>);
