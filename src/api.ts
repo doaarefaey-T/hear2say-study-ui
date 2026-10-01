@@ -42,3 +42,16 @@ export async function couponAdmin<T>(method: "GET" | "POST", body?: unknown): Pr
   if (!response.ok) throw new ApiError(response.status, typeof payload.error === "string" ? payload.error : "REQUEST_FAILED");
   return payload as T;
 }
+
+export async function couponRedeem<T>(code: string): Promise<T> {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session?.access_token) throw new ApiError(401, "SIGN_IN_REQUIRED");
+  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/coupon-redeem-api`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session.access_token}` },
+    body: JSON.stringify({ code }),
+  });
+  const payload = await response.json().catch(() => ({})) as { error?: unknown };
+  if (!response.ok) throw new ApiError(response.status, typeof payload.error === "string" ? payload.error : "REQUEST_FAILED");
+  return payload as T;
+}
