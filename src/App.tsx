@@ -255,9 +255,27 @@ export default function App() {
   const [settings, setSettings] = useState<Settings | null>(null); const [courses, setCourses] = useState<PublicCourse[]>([]); const [courseLoading, setCourseLoading] = useState<string | null>(null); const [dashboard, setDashboard] = useState<DashboardData | null>(null); const [view, setView] = useState<View>("landing"); const [authOpen, setAuthOpen] = useState(false); const [course, setCourse] = useState<CourseDetail | null>(null); const [lesson, setLesson] = useState<LessonData | null>(null); const [loading, setLoading] = useState(true); const [notice, setNotice] = useState(""); const [bootFailed, setBootFailed] = useState(false); const [locale, setLocale] = useState<Locale>(() => localStorage.getItem("hear2say-locale") === "en" ? "en" : "ar");
   useEffect(() => { document.documentElement.lang = locale; document.documentElement.dir = locale === "ar" ? "rtl" : "ltr"; localStorage.setItem("hear2say-locale", locale); }, [locale]);
   const localize = (node: ReactNode) => <LocaleContext.Provider value={{ locale, t: copy[locale], setLocale }}><div className={`locale-${locale}`}>{node}</div></LocaleContext.Provider>;
-  async function loadPublic() { const [setting, catalog] = await Promise.all([api<Settings>("/settings"), api<{ courses: PublicCourse[] }>("/learning/catalog")]); setSettings(setting); setCourses(catalog.courses); }
+  const fallbackSettings: Settings = { monthly_price_cents: 387, currency: "USD", payment_instructions: "تواصلي مع صاحبة الموقع للحصول على طريقة الدفع وتفعيل الاشتراك يدوياً.", payment_contact_label: "تواصلي معنا", payment_contact_url: "" };
+  async function loadPublic() {
+    let setting: Settings = fallbackSettings;
+    try {
+      setting = await Promise.race([
+        api<Settings>("/settings"),
+        new Promise<Settings>((resolve) => window.setTimeout(() => resolve(fallbackSettings), 5000)),
+      ]);
+    } catch { /* The known $3.87 configuration keeps the shell usable during a cold start. */ }
+    setSettings(setting);
+    setLoading(false);
+    try {
+      const catalog = await Promise.race([
+        api<{ courses: PublicCourse[] }>("/learning/catalog"),
+        new Promise<{ courses: PublicCourse[] }>((resolve) => window.setTimeout(() => resolve({ courses: [] }), 8000)),
+      ]);
+      setCourses(catalog.courses);
+    } catch { setNotice("يمكنك فتح المنصة الآن؛ المسارات ستظهر بعد اكتمال الاتصال."); }
+  }
   async function loadDashboard() { try { const current = await api<DashboardData>("/learning/dashboard", {}, true); setDashboard(current); return current; } catch { setDashboard(null); return null; } }
-  async function refresh() { setLoading(true); setBootFailed(false); try { await loadPublic(); setLoading(false); const sessionCheck = Promise.race([supabase.auth.getSession(), new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("AUTH_TIMEOUT")), 3000))]); try { const { data } = await sessionCheck; if (data.session) { const current = await loadDashboard(); if (current) setView("dashboard"); } } catch { /* Public landing remains usable if auth refresh is slow. */ } } catch { setNotice("تعذر تحميل بعض بيانات المنصة. حاولي التحديث."); setBootFailed(true); setLoading(false); } }
+  async function refresh() { setLoading(true); setBootFailed(false); try { await loadPublic(); const sessionCheck = Promise.race([supabase.auth.getSession(), new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("AUTH_TIMEOUT")), 3000))]); try { const { data } = await sessionCheck; if (data.session) { const current = await loadDashboard(); if (current) setView("dashboard"); } } catch { /* Public landing remains usable if auth refresh is slow. */ } } catch { setNotice("تعذر تحميل بعض بيانات المنصة. حاولي التحديث."); setBootFailed(true); setLoading(false); } }
   useEffect(() => { void refresh(); const { data: { subscription } } = supabase.auth.onAuthStateChange(() => { void loadDashboard(); }); return () => subscription.unsubscribe(); }, []);
   async function navigate(next: View) { if (["dashboard", "admin"].includes(next) && !dashboard) { setAuthOpen(true); return; } if (next === "admin" && dashboard?.profile.role !== "admin") return; setView(next); }
   async function openCourse(slug: string) {
