@@ -43,6 +43,10 @@ const LocaleContext = createContext<{ locale: Locale; t: InterfaceCopy; setLocal
 const useLocale = () => useContext(LocaleContext);
 function LanguageToggle() { const { locale, t, setLocale } = useLocale(); return <button className="language-toggle" type="button" onClick={() => setLocale(locale === "ar" ? "en" : "ar")} aria-label="Change interface language">{t.language}</button>; }
 
+function appRedirectUrl() {
+  return new URL("./", window.location.href).toString();
+}
+
 function AuthDialog({ onClose, onReady }: { onClose: () => void; onReady: () => Promise<void> }) {
   const [mode, setMode] = useState<AuthMode>("login");
   const [email, setEmail] = useState(""); const [password, setPassword] = useState(""); const [name, setName] = useState("");
@@ -50,12 +54,12 @@ function AuthDialog({ onClose, onReady }: { onClose: () => void; onReady: () => 
   async function submit(event: FormEvent) {
     event.preventDefault(); setBusy(true); setMessage("");
     if (mode === "reset") {
-      const result = await supabase.auth.resetPasswordForEmail(email, { redirectTo: window.location.href });
+      const result = await supabase.auth.resetPasswordForEmail(email, { redirectTo: appRedirectUrl() });
       setBusy(false); setMessage(result.error ? result.error.message : "إذا كان البريد مسجلاً، ستصلك رسالة لإعادة تعيين كلمة المرور."); return;
     }
     const result = mode === "login"
       ? await supabase.auth.signInWithPassword({ email, password })
-      : await supabase.auth.signUp({ email, password, options: { data: { display_name: name } } });
+      : await supabase.auth.signUp({ email, password, options: { data: { display_name: name }, emailRedirectTo: appRedirectUrl() } });
     setBusy(false);
     if (result.error) { setMessage(result.error.message); return; }
     if (mode === "signup" && !result.data.session) { setMessage("تم إنشاء الحساب. تحققي من بريدك ثم سجّلي الدخول."); return; }
