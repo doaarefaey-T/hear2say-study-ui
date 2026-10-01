@@ -29,3 +29,16 @@ export async function privateAudioUrl(activityId: string): Promise<string> {
   if (!result.signed_url || result.expires_in_seconds > 60) throw new ApiError(500, "AUDIO_LINK_UNAVAILABLE");
   return result.signed_url;
 }
+
+export async function couponAdmin<T>(method: "GET" | "POST", body?: unknown): Promise<T> {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session?.access_token) throw new ApiError(401, "SIGN_IN_REQUIRED");
+  const response = await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/coupon-admin-api`, {
+    method,
+    headers: { "Content-Type": "application/json", Authorization: `Bearer ${data.session.access_token}` },
+    body: body === undefined ? undefined : JSON.stringify(body),
+  });
+  const payload = await response.json().catch(() => ({})) as { error?: unknown };
+  if (!response.ok) throw new ApiError(response.status, typeof payload.error === "string" ? payload.error : "REQUEST_FAILED");
+  return payload as T;
+}

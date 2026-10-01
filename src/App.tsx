@@ -5,7 +5,7 @@ import {
   Lock, LockKeyhole, LogIn, LogOut, Menu, MoreHorizontal, Pause, Play, Plus, RefreshCcw, Search,
   Settings2, ShieldCheck, Sparkles, TicketPercent, UserPlus, Users, Volume2, X,
 } from "lucide-react";
-import { api, ApiError, privateAudioUrl } from "./api";
+import { api, ApiError, couponAdmin, privateAudioUrl } from "./api";
 import { supabase } from "./supabase";
 
 type Settings = { monthly_price_cents: number; currency: string; payment_instructions: string; payment_contact_label: string; payment_contact_url: string };
@@ -303,7 +303,7 @@ function AdminStudio({ dashboard, settings, onBack, onRefresh }: { dashboard: Da
       api<any>("/admin/overview", {}, true),
       api<any>("/admin/curriculum", {}, true),
       api<any>("/admin/users", {}, true),
-      api<any>("/admin/coupons", {}, true),
+      couponAdmin<any>("GET"),
     ]);
     const [overviewResult, curriculumResult, usersResult, couponsResult] = results;
     if (overviewResult.status === "fulfilled") setOverview(overviewResult.value);
@@ -318,7 +318,7 @@ function AdminStudio({ dashboard, settings, onBack, onRefresh }: { dashboard: Da
   useEffect(() => setConfig(settings), [settings]);
   useEffect(() => { if (tab === "placement") void loadPlacementResults(); }, [tab]);
   async function saveSettings(event: FormEvent) { event.preventDefault(); try { await api("/admin/settings", { method: "PATCH", body: JSON.stringify(config) }, true); await onRefresh(); setMessage("تم حفظ إعدادات الاشتراك والدفع اليدوي."); } catch (e) { setMessage(say(e)); } }
-  async function saveCoupon(event: FormEvent) { event.preventDefault(); try { await api("/admin/coupons", { method: "POST", body: JSON.stringify({ code: coupon.code, percent_off: 100, grant_days: Number(coupon.grant_days), max_redemptions: coupon.max_redemptions ? Number(coupon.max_redemptions) : null, valid_until: coupon.valid_until || null }) }, true); setCoupon({ code: "", grant_days: 30, max_redemptions: "", valid_until: "" }); await loadAll(); setMessage("تم إنشاء كود 100%."); } catch (e) { setMessage(say(e)); } }
+  async function saveCoupon(event: FormEvent) { event.preventDefault(); try { await couponAdmin("POST", { code: coupon.code, percent_off: 100, grant_days: Number(coupon.grant_days), max_redemptions: coupon.max_redemptions ? Number(coupon.max_redemptions) : null, valid_until: coupon.valid_until || null }); setCoupon({ code: "", grant_days: 30, max_redemptions: "", valid_until: "" }); await loadAll(); setMessage("تم إنشاء كود 100%."); } catch (e) { setMessage(say(e)); } }
   async function grantSubscription(event: FormEvent<HTMLFormElement>) { event.preventDefault(); const form = new FormData(event.currentTarget); try { await api("/admin/subscriptions", { method: "POST", body: JSON.stringify({ user_id: form.get("user_id"), starts_at: new Date(String(form.get("starts_at"))).toISOString(), ends_at: new Date(String(form.get("ends_at"))).toISOString(), note: form.get("note"), source: "manual_payment" }) }, true); setMessage("تم تفعيل الاشتراك يدوياً."); await loadAll(); } catch (e) { setMessage(say(e)); } }
   async function curriculumSave(event: FormEvent) { event.preventDefault(); try { const base: any = { ...editor }; if (["activity"].includes(editor.type)) { base.content = JSON.parse(editor.content || "{}"); base.answer_key = JSON.parse(editor.answer_key || "{}"); } if (["unit"].includes(editor.type)) base.target_words = String(editor.target_words || "").split(",").map((word) => word.trim()).filter(Boolean); const route = editor.type === "course" ? "/admin/courses" : editor.type === "unit" ? "/admin/units" : editor.type === "lesson" ? "/admin/lessons" : "/admin/activities"; const method = editor.id ? "PATCH" : "POST"; await api(`${route}${editor.id ? `/${editor.id}` : ""}`, { method, body: JSON.stringify(base) }, true); setMessage("تم حفظ عنصر المنهج."); setEditor({ type: editor.type, id: "", title: "", slug: "", level: "A2", description: "", course_id: "", unit_id: "", lesson_id: "", unit_number: 1, lesson_number: 1, kind: "multiple_choice", activity_number: 1, instructions: "", content: "{}", answer_key: "{}", explanation: "", is_published: false }); await loadAll(); } catch (e) { setMessage(e instanceof SyntaxError ? "راجعي JSON للنشاط قبل الحفظ." : say(e)); } }
   async function loadPlacementResults() { try { const data = await api<any>("/admin/placement-results", {}, true); setPlacementResults(data.results || []); } catch (e) { setMessage(say(e)); } }
