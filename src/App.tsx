@@ -29,7 +29,7 @@ const errorArabic: Record<string, string> = {
   SIGN_IN_REQUIRED: "سجّلي الدخول أولاً.", ACTIVE_SUBSCRIPTION_REQUIRED: "هذا الدرس متاح باشتراك فعّال فقط.",
   COURSE_NOT_FOUND: "لم نعثر على هذا المسار.", LESSON_NOT_FOUND: "هذا الدرس غير متاح حالياً.",
   COUPON_NOT_FOUND: "الكود غير موجود.", COUPON_INACTIVE: "هذا الكود معطّل.", COUPON_EXPIRED: "انتهت صلاحية الكود.",
-  COUPON_LIMIT_REACHED: "اكتمل عدد استخدامات الكود.", COUPON_ALREADY_REDEEMED: "استُخدم الكود سابقاً على هذا الحساب.",
+  COUPON_LIMIT_REACHED: "اكتمل عدد استخدامات الكود.", COUPON_ALREADY_REDEEMED: "استُخدم الكود سابقاً على هذا الحساب.", COUPON_ALREADY_EXISTS: "هذا الكود موجود بالفعل؛ اختاري كوداً مختلفاً.", INVALID_COUPON: "الكود يجب أن يكون 4–40 حرفاً إنجليزياً أو رقماً أو شرطة.", INVALID_EXPIRY: "تاريخ الانتهاء غير صالح.", ADMIN_PROFILE_NOT_READY: "حساب المشرف غير مكتمل في قاعدة البيانات.", COUPON_CREATE_FAILED: "تعذر حفظ الكود في قاعدة البيانات.",
   ADMIN_REQUIRED: "هذه المساحة للمالكة فقط.", AUDIO_NOT_FOUND: "المقطع غير متاح بعد.",
 };
 const say = (error: unknown) => error instanceof ApiError ? (errorArabic[error.code] ?? "تعذّر تنفيذ الطلب الآن.") : "حدث خطأ مؤقت. حاولي مجدداً.";
