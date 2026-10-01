@@ -279,7 +279,22 @@ function Membership({ settings, dashboard, onAuth, onRefresh }: { settings: Sett
 function AdminStudio({ dashboard, settings, onBack, onRefresh }: { dashboard: DashboardData; settings: Settings; onBack: () => void; onRefresh: () => Promise<void> }) {
   const [tab, setTab] = useState<"overview" | "curriculum" | "learners" | "placement" | "membership" | "audio">("overview"); const [overview, setOverview] = useState<any>(null); const [placementResults, setPlacementResults] = useState<any[]>([]); const [curriculum, setCurriculum] = useState<any[]>([]); const [users, setUsers] = useState<any[]>([]); const [query, setQuery] = useState(""); const [message, setMessage] = useState(""); const [config, setConfig] = useState(settings); const [coupon, setCoupon] = useState({ code: "", grant_days: 30, max_redemptions: "", valid_until: "" }); const [coupons, setCoupons] = useState<any[]>([]); const [editor, setEditor] = useState<any>({ type: "course", id: "", title: "", slug: "", level: "A2", description: "", course_id: "", unit_id: "", lesson_id: "", unit_number: 1, lesson_number: 1, kind: "multiple_choice", activity_number: 1, instructions: "", content: "{}", answer_key: "{}", explanation: "", is_published: false });
   const unitOptions = useMemo(() => curriculum.flatMap((course: any) => course.units.map((unit: any) => ({ ...unit, course }))), [curriculum]); const lessonOptions = useMemo(() => unitOptions.flatMap((unit: any) => unit.lessons.map((lesson: any) => ({ ...lesson, unit }))), [unitOptions]); const activityOptions = useMemo(() => lessonOptions.flatMap((lesson: any) => lesson.activities.map((activity: any) => ({ ...activity, lesson }))), [lessonOptions]);
-  async function loadAll() { try { const [o, c, u, codes] = await Promise.all([api<any>("/admin/overview", {}, true), api<any>("/admin/curriculum", {}, true), api<any>("/admin/users", {}, true), api<any>("/admin/coupons", {}, true)]); setOverview(o); setCurriculum(c.courses); setUsers(u.users); setCoupons(codes.coupons); } catch (e) { setMessage(say(e)); } }
+  async function loadAll() {
+    const results = await Promise.allSettled([
+      api<any>("/admin/overview", {}, true),
+      api<any>("/admin/curriculum", {}, true),
+      api<any>("/admin/users", {}, true),
+      api<any>("/admin/coupons", {}, true),
+    ]);
+    const [overviewResult, curriculumResult, usersResult, couponsResult] = results;
+    if (overviewResult.status === "fulfilled") setOverview(overviewResult.value);
+    if (curriculumResult.status === "fulfilled") setCurriculum(curriculumResult.value.courses || []);
+    if (usersResult.status === "fulfilled") setUsers(usersResult.value.users || []);
+    if (couponsResult.status === "fulfilled") setCoupons(couponsResult.value.coupons || []);
+    const failed = results.find((result) => result.status === "rejected") as PromiseRejectedResult | undefined;
+    if (failed && results.every((result) => result.status === "rejected")) setMessage(say(failed.reason));
+    else if (failed) setMessage("تم فتح الإدارة. بعض البيانات الكبيرة ما زالت قيد التحميل؛ يمكنك إنشاء كود الاشتراك الآن.");
+  }
   useEffect(() => { void loadAll(); }, []);
   useEffect(() => setConfig(settings), [settings]);
   useEffect(() => { if (tab === "placement") void loadPlacementResults(); }, [tab]);
