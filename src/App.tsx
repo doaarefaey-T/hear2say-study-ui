@@ -342,8 +342,30 @@ function AdminStudio({ dashboard, settings, onBack, onRefresh }: { dashboard: Da
   </main>;
 }
 
+type SavedRoute = { view?: View; courseSlug?: string; lessonId?: string };
+function readSavedRoute(): SavedRoute {
+  try {
+    const params = new URLSearchParams(window.location.search);
+    const fromUrl: SavedRoute = { view: (params.get("view") as View) || undefined, courseSlug: params.get("course") || undefined, lessonId: params.get("lesson") || undefined };
+    if (fromUrl.view) return fromUrl;
+    const raw = sessionStorage.getItem("hear2say:route");
+    return raw ? JSON.parse(raw) as SavedRoute : {};
+  } catch { return {}; }
+}
+
 export default function App() {
-  const [settings, setSettings] = useState<Settings | null>(null); const [courses, setCourses] = useState<PublicCourse[]>([]); const [courseLoading, setCourseLoading] = useState<string | null>(null); const [dashboard, setDashboard] = useState<DashboardData | null>(null); const [view, setView] = useState<View>("landing"); const [authOpen, setAuthOpen] = useState(false); const [course, setCourse] = useState<CourseDetail | null>(null); const [lesson, setLesson] = useState<LessonData | null>(null); const [loading, setLoading] = useState(true); const [notice, setNotice] = useState(""); const [bootFailed, setBootFailed] = useState(false); const [locale, setLocale] = useState<Locale>(() => localStorage.getItem("hear2say-locale") === "en" ? "en" : "ar");
+  const initialRoute = useRef(readSavedRoute());
+  const [settings, setSettings] = useState<Settings | null>(null); const [courses, setCourses] = useState<PublicCourse[]>([]); const [courseLoading, setCourseLoading] = useState<string | null>(null); const [dashboard, setDashboard] = useState<DashboardData | null>(null); const [view, setView] = useState<View>(() => initialRoute.current.view || "landing"); const [authOpen, setAuthOpen] = useState(false); const [course, setCourse] = useState<CourseDetail | null>(null); const [lesson, setLesson] = useState<LessonData | null>(null); const [loading, setLoading] = useState(true); const [notice, setNotice] = useState(""); const [bootFailed, setBootFailed] = useState(false); const [locale, setLocale] = useState<Locale>(() => localStorage.getItem("hear2say-locale") === "en" ? "en" : "ar");
+  useEffect(() => {
+    const saved: SavedRoute = { view, courseSlug: course?.slug || initialRoute.current.courseSlug, lessonId: lesson?.lesson.id || initialRoute.current.lessonId };
+    if (course) initialRoute.current.courseSlug = course.slug;
+    if (lesson) initialRoute.current.lessonId = lesson.lesson.id;
+    try { sessionStorage.setItem("hear2say:route", JSON.stringify(saved)); } catch { /* ignore storage limits */ }
+    const params = new URLSearchParams(); params.set("view", view);
+    if (saved.courseSlug) params.set("course", saved.courseSlug);
+    if (saved.lessonId && view === "lesson") params.set("lesson", saved.lessonId);
+    window.history.replaceState({}, "", `${window.location.pathname}?${params.toString()}`);
+  }, [view, course?.slug, lesson?.lesson.id]);
   useEffect(() => { document.documentElement.lang = locale; document.documentElement.dir = locale === "ar" ? "rtl" : "ltr"; localStorage.setItem("hear2say-locale", locale); }, [locale]);
   const localize = (node: ReactNode) => <LocaleContext.Provider value={{ locale, t: copy[locale], setLocale }}><div className={`locale-${locale}`}>{node}</div></LocaleContext.Provider>;
   const fallbackSettings: Settings = { monthly_price_cents: 387, currency: "USD", payment_instructions: "تواصلي مع صاحبة الموقع للحصول على طريقة الدفع وتفعيل الاشتراك يدوياً.", payment_contact_label: "تواصلي معنا", payment_contact_url: "" };
@@ -366,7 +388,7 @@ export default function App() {
     } catch { setNotice("يمكنك فتح المنصة الآن؛ المسارات ستظهر بعد اكتمال الاتصال."); }
   }
   async function loadDashboard() { try { const current = await api<DashboardData>("/learning/dashboard", {}, true); setDashboard(current); return current; } catch { setDashboard(null); return null; } }
-  async function refresh() { setLoading(true); setBootFailed(false); try { await loadPublic(); const sessionCheck = Promise.race([supabase.auth.getSession(), new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("AUTH_TIMEOUT")), 3000))]); try { const { data } = await sessionCheck; if (data.session) { const current = await loadDashboard(); if (current) setView("dashboard"); } } catch { /* Public landing remains usable if auth refresh is slow. */ } } catch { setNotice("تعذر تحميل بعض بيانات المنصة. حاولي التحديث."); setBootFailed(true); setLoading(false); } }
+  async function refresh() { setLoading(true); setBootFailed(false); try { await loadPublic(); const sessionCheck = Promise.race([supabase.auth.getSession(), new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("AUTH_TIMEOUT")), 3000))]); try { const { data } = await sessionCheck; const saved = initialRoute.current; if (data.session) { const current = await loadDashboard(); if (current) { if (saved.view === "lesson" && saved.lessonId) { if (saved.courseSlug) await openCourse(saved.courseSlug); await openLesson(saved.lessonId); } else if (saved.view === "course" && saved.courseSlug) await openCourse(saved.courseSlug); else if (["dashboard", "admin", "placement", "games", "membership", "courses"].includes(saved.view || "")) setView(saved.view as View); else setView("dashboard"); } } else if (saved.view === "course" && saved.courseSlug) { await openCourse(saved.courseSlug); } } catch { /* Public landing remains usable if auth refresh is slow. */ } } catch { setNotice("تعذر تحميل بعض بيانات المنصة. حاولي التحديث."); setBootFailed(true); } finally { setLoading(false); } }
   useEffect(() => { void refresh(); const { data: { subscription } } = supabase.auth.onAuthStateChange(() => { void loadDashboard(); }); return () => subscription.unsubscribe(); }, []);
   async function navigate(next: View) { if (["dashboard", "admin", "placement"].includes(next) && !dashboard) { setAuthOpen(true); return; } if (next === "admin" && dashboard?.profile.role !== "admin") return; setView(next); }
   async function openCourse(slug: string) {
