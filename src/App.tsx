@@ -462,7 +462,9 @@ export default function App() {
   useEffect(() => { void refresh(); const { data: { subscription } } = supabase.auth.onAuthStateChange(() => { void loadDashboard(); }); return () => subscription.unsubscribe(); }, []);
   async function navigate(next: View) { if (["dashboard", "admin", "placement"].includes(next) && !dashboard) { setAuthOpen(true); return; } if (next === "admin" && dashboard?.profile.role !== "admin") return; setView(next); }
   async function openCourse(slug: string) {
-    const cacheKey = `hear2say:course:${slug}`;
+    // Version the public course cache so editorial updates cannot leave the
+    // course card out of sync with the lesson screen.
+    const cacheKey = `hear2say:course:v2:${slug}`;
     // Never reuse a course detail cached by another authenticated account.
     // Public visitors may use the cache, but paid session data must always come
     // from the server for the current access token.
