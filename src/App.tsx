@@ -5,7 +5,7 @@ import {
   Lock, LockKeyhole, LogIn, LogOut, Menu, MoreHorizontal, Pause, Play, Plus, RefreshCcw, Search,
   Settings2, ShieldCheck, Sparkles, TicketPercent, UserPlus, Users, Volume2, X,
 } from "lucide-react";
-import { api, ApiError, couponAdmin, couponRedeem, privateAudioUrl } from "./api";
+import { api, ApiError, couponAdmin, couponRedeem, getRepeatSentenceQuestion, privateAudioUrl, submitRepeatSentence, type RepeatSentenceQuestion, type RepeatSentenceResult } from "./api";
 import QuestionSource from "./QuestionSource";
 import { supabase } from "./supabase";
 
@@ -23,7 +23,7 @@ type PlacementQuestion = { id: string; skill: "grammar" | "vocabulary" | "readin
 type PlacementResult = { id: string; total_score: number; recommended_level: "Starter" | "A1" | "A2" | "B1" | "B2" | "C1" | "C2"; skill_scores: Record<string, number>; completed_at: string };
 type LessonData = { course: { id: string; slug: string; title: string; level: string }; unit: { id: string; unit_number: number; title: string; focus: string; grammar_topic: string; target_words: string[] }; lesson: { id: string; slug: string; title: string; description: string; learning_objective: string; estimated_minutes: number }; unit_audio_activity_id?: string | null; activities: Activity[]; progress: Progress };
 type AttemptResult = { result: { score: number; correct: boolean; completed: boolean; feedback: any }; progress: Progress };
-type View = "landing" | "dashboard" | "courses" | "course" | "lesson" | "membership" | "placement" | "games" | "pte" | "admin";
+type View = "landing" | "dashboard" | "courses" | "course" | "lesson" | "membership" | "placement" | "games" | "pte" | "pte-repeat" | "admin";
 type AuthMode = "login" | "signup" | "reset";
 
 const errorArabic: Record<string, string> = {
@@ -386,7 +386,66 @@ const pteSkills: Array<{ id: PteSkillId; title: string; ar: string; description:
 function FileTextIcon() { return <span className="pte-inline-icon">Aa</span>; }
 function PenLineIcon() { return <span className="pte-inline-icon">✎</span>; }
 
-function PteSelector({ onBack }: { onBack: () => void }) {
+function PteRepeatSentence({ onBack }: { onBack: () => void }) {
+  const { locale } = useLocale();
+  const english = locale === "en";
+  const [question, setQuestion] = useState<RepeatSentenceQuestion | null>(null);
+  const [result, setResult] = useState<RepeatSentenceResult | null>(null);
+  const [transcript, setTranscript] = useState("");
+  const [status, setStatus] = useState<"loading" | "ready" | "recording" | "recorded" | "submitting" | "scored" | "error">("loading");
+  const [message, setMessage] = useState("");
+  const [seconds, setSeconds] = useState(0);
+  const [recordingUrl, setRecordingUrl] = useState<string | null>(null);
+  const recorderRef = useRef<MediaRecorder | null>(null);
+  const streamRef = useRef<MediaStream | null>(null);
+  const recognitionRef = useRef<any>(null);
+  const chunksRef = useRef<Blob[]>([]);
+  const startedAtRef = useRef<number>(0);
+
+  useEffect(() => {
+    void getRepeatSentenceQuestion().then((data) => { setQuestion(data); setStatus("ready"); }).catch((error) => { setMessage(say(error)); setStatus("error"); });
+    return () => { streamRef.current?.getTracks().forEach((track) => track.stop()); if (recordingUrl) URL.revokeObjectURL(recordingUrl); };
+  }, []);
+
+  useEffect(() => {
+    if (status !== "recording") return;
+    const timer = window.setInterval(() => setSeconds(Math.floor((Date.now() - startedAtRef.current) / 1000)), 250);
+    return () => window.clearInterval(timer);
+  }, [status]);
+
+  function playPrompt() {
+    if (!question) return;
+    if (question.audio_url) { const audio = document.getElementById("pte-repeat-prompt") as HTMLAudioElement | null; audio?.play().catch(() => {}); return; }
+    if ("speechSynthesis" in window) { window.speechSynthesis.cancel(); const utterance = new SpeechSynthesisUtterance(question.reference_text); utterance.lang = "en-US"; utterance.rate = 0.78; window.speechSynthesis.speak(utterance); }
+  }
+
+  async function startRecording() {
+    if (!question) return;
+    try {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true } });
+      streamRef.current = stream; chunksRef.current = []; setTranscript(""); setResult(null); setMessage("");
+      const mimeType = MediaRecorder.isTypeSupported("audio/webm;codecs=opus") ? "audio/webm;codecs=opus" : "audio/webm";
+      const recorder = new MediaRecorder(stream, { mimeType });
+      recorder.ondataavailable = (event) => { if (event.data.size) chunksRef.current.push(event.data); };
+      recorder.onstop = () => { const blob = new Blob(chunksRef.current, { type: mimeType }); if (recordingUrl) URL.revokeObjectURL(recordingUrl); setRecordingUrl(URL.createObjectURL(blob)); setStatus("recorded"); };
+      const Recognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+      if (Recognition) { const recognition = new Recognition(); recognition.lang = "en-US"; recognition.continuous = true; recognition.interimResults = true; recognition.onresult = (event: any) => { let textValue = ""; for (let index = event.resultIndex; index < event.results.length; index += 1) textValue += event.results[index][0].transcript + " "; setTranscript((current) => `${current} ${textValue}`.trim()); }; recognitionRef.current = recognition; recognition.start(); }
+      recorder.start(); recorderRef.current = recorder; startedAtRef.current = Date.now(); setSeconds(0); setStatus("recording");
+    } catch { setMessage(english ? "Microphone access was not granted. You can type the transcript below instead." : "لم يتم السماح باستخدام الميكروفون. يمكنكِ كتابة النص الذي نطقتِه يدويًا بالأسفل."); setStatus("recorded"); }
+  }
+
+  function stopRecording() { if (recorderRef.current?.state === "recording") recorderRef.current.stop(); if (recognitionRef.current) { try { recognitionRef.current.stop(); } catch {} } streamRef.current?.getTracks().forEach((track) => track.stop()); setSeconds(Math.max(1, Math.floor((Date.now() - startedAtRef.current) / 1000))); }
+  async function submit() { if (!question || !transcript.trim()) { setMessage(english ? "Record or type your spoken answer first." : "سجّلي إجابتك أو اكتبي النص المنطوق أولًا."); return; } setStatus("submitting"); setMessage(""); try { const data = await submitRepeatSentence({ question_id: question.id, transcript, duration_ms: Math.max(1000, seconds * 1000) }); setResult(data); setStatus("scored"); } catch (error) { setMessage(say(error)); setStatus("error"); } }
+  function retry() { setResult(null); setTranscript(""); setRecordingUrl(null); setSeconds(0); setMessage(""); setStatus("ready"); }
+
+  return <main className="platform-main pte-repeat-page"><Topbar title={english ? "Repeat Sentence" : "تكرار الجملة"} subtitle="PTE · SPEAKING" dashboard={null} onMenu={() => {}}/><button className="back-inline" onClick={onBack}><ArrowRight size={16}/>{english ? "Back to task types" : "العودة إلى أنواع المهام"}</button>{message && <p className="inline-error">{message}</p>}
+    <section className="pte-repeat-layout"><div className="pte-repeat-main"><div className="pte-repeat-heading"><span className="eyebrow"><Headphones size={13}/> {english ? "TASK 02 · SPEAKING" : "المهمة 02 · التحدث"}</span><h2>{english ? "Listen once, then repeat the sentence." : "استمعي مرة واحدة، ثم كرري الجملة."}</h2><p>{english ? "Focus on accurate words, natural rhythm, and a clear voice. You can listen again before recording." : "ركزي على الكلمات الصحيحة والإيقاع الطبيعي ووضوح الصوت. يمكنكِ إعادة الاستماع قبل التسجيل."}</p></div>
+      {status === "loading" && <div className="pte-repeat-loading"><Sparkles size={18}/> {english ? "Loading your practice question…" : "جاري تحميل سؤال التدريب…"}</div>}
+      {question && <><div className="pte-repeat-player"><div><span className="pte-audio-label">{question.audio_url ? (english ? "QUESTION AUDIO" : "صوت السؤال") : (english ? "BROWSER AUDIO PREVIEW" : "معاينة صوتية من المتصفح")}</span><strong>{english ? "Listen carefully" : "استمعي جيدًا"}</strong><small>{english ? "You will hear the sentence once in the real task." : "ستسمعين الجملة مرة واحدة في المهمة الفعلية."}</small></div>{question.audio_url && <audio id="pte-repeat-prompt" src={question.audio_url} controls preload="none"/>}<button className="play-button pte-prompt-play" onClick={playPrompt} aria-label={english ? "Play question" : "تشغيل السؤال"}><Play size={20}/></button></div><div className="pte-repeat-rule"><span>1</span><p>{english ? "Listen" : "استمعي"}</p><span>2</span><p>{english ? "Record" : "سجّلي"}</p><span>3</span><p>{english ? "Check" : "تحققي"}</p></div><div className="pte-repeat-card"><div className="pte-repeat-card-top"><span className="pte-task-icon"><Mic size={17}/></span><span>{english ? "Your response" : "إجابتك"}</span><b>{status === "recording" ? `${seconds}s` : question.estimated_time_seconds + " sec"}</b></div>{status === "recording" ? <div className="pte-recording-state"><span className="pte-recording-dot"/><strong>{english ? "Recording…" : "جارٍ التسجيل…"}</strong><small>{english ? "Speak naturally, then press Stop." : "تحدثي بشكل طبيعي ثم اضغطي إيقاف."}</small><button className="outline-cta" onClick={stopRecording}><Square size={15}/>{english ? "Stop recording" : "إيقاف التسجيل"}</button></div> : <div className="pte-record-ready">{recordingUrl && <audio src={recordingUrl} controls/>}<div className="pte-record-actions"><button className="primary-cta" onClick={startRecording}><Mic size={16}/>{recordingUrl ? (english ? "Record again" : "تسجيل مرة أخرى") : (english ? "Start recording" : "بدء التسجيل")}</button>{status !== "ready" && <button className="outline-cta" onClick={submit} disabled={status === "submitting"}>{status === "submitting" ? (english ? "Checking…" : "جاري التصحيح…") : (english ? "Check answer" : "تصحيح الإجابة")}<ArrowLeft size={15}/></button>}</div></div>}<label className="pte-transcript-label">{english ? "Transcript used for practice scoring (editable)" : "النص المستخدم للتصحيح التدريبي (قابل للتعديل)"}<textarea value={transcript} onChange={(event) => setTranscript(event.target.value)} placeholder={english ? "Your speech transcript will appear here…" : "سيظهر هنا النص الذي التقطه التسجيل…"} /></label></div></>}
+    </div><aside className="pte-repeat-side"><div className="pte-side-card"><span className="pte-preview-icon"><BadgeCheck size={20}/></span><h3>{english ? "What is scored?" : "ما الذي يتم تصحيحه؟"}</h3><div className="pte-trait-line"><span>{english ? "Content accuracy" : "دقة المحتوى"}</span><b>80%</b></div><div className="pte-trait-line"><span>{english ? "Oral fluency" : "الطلاقة الشفهية"}</span><b>20%</b></div><div className="pte-trait-line is-disabled"><span>{english ? "Pronunciation" : "النطق"}</span><b>{english ? "Later" : "لاحقًا"}</b></div><small>{english ? "Pronunciation scoring will be activated when a speech assessment key is configured." : "سيتم تفعيل تصحيح النطق عند إعداد مفتاح محرك التقييم الصوتي."}</small></div>{result && <div className="pte-result-card"><span className="eyebrow">{english ? "YOUR RESULT" : "نتيجتك"}</span><strong>{Math.round(result.score.overall_score)}<small>/100</small></strong><p>{result.score.feedback.message}</p><div className="pte-result-bars"><div><span>{english ? "Content" : "المحتوى"}<b>{result.score.trait_scores.content}</b></span><i><em style={{ width: `${result.score.trait_scores.content}%` }}/></i></div><div><span>{english ? "Fluency" : "الطلاقة"}<b>{result.score.trait_scores.oral_fluency}</b></span><i><em style={{ width: `${result.score.trait_scores.oral_fluency}%` }}/></i></div></div><div className="pte-word-feedback">{result.score.feedback.missing_words.length > 0 && <p><b>{english ? "Check:" : "راجعي:"}</b> {result.score.feedback.missing_words.join(", ")}</p>}{result.score.feedback.extra_words.length > 0 && <p><b>{english ? "Extra:" : "زائد:"}</b> {result.score.feedback.extra_words.join(", ")}</p>}</div><button className="outline-cta" onClick={retry}><RotateCcw size={15}/>{english ? "Try again" : "إعادة المحاولة"}</button></div>}</aside></section></main>;
+}
+
+function PteSelector({ onBack, onStartTask }: { onBack: () => void; onStartTask: (taskId: string) => void }) {
   const { locale } = useLocale();
   const english = locale === "en";
   const [skillId, setSkillId] = useState<PteSkillId>("speaking");
@@ -417,7 +476,7 @@ function PteSelector({ onBack }: { onBack: () => void }) {
     </section>
     <section className="pte-task-section">
       <div className="section-label"><div><span className="eyebrow">02 · TASK TYPE</span><h2>{english ? `${skill.title} task types` : `أنواع مهام ${skill.ar}`}</h2></div><span>{skill.tasks.length} {english ? "available" : "متاحة"}</span></div>
-      <div className="pte-task-layout"><div className="pte-task-list">{skill.tasks.map((item, index) => <button key={item.id} className={`pte-task-row ${task.id === item.id ? "is-active" : ""}`} onClick={() => setTaskId(item.id)}><span className="pte-task-number">{String(index + 1).padStart(2, "0")}</span><span className="pte-task-icon">{item.icon}</span><span className="pte-task-copy"><strong>{english ? item.title : item.ar}</strong><small>{english ? item.description : item.description}</small></span><span className="pte-task-time"><Clock3 size={13}/>{item.time}</span><ChevronLeft size={16}/></button>)}</div><aside className="pte-task-preview"><span className="pte-preview-icon">{task.icon}</span><span className="eyebrow">{skill.title.toUpperCase()}</span><h3>{english ? task.title : task.ar}</h3><p>{task.description}</p><div className="pte-preview-meta"><span><Timer size={14}/>{task.time}</span><span><BadgeCheck size={14}/>{english ? "Instant feedback" : "تصحيح فوري"}</span></div><button className="primary-cta" onClick={() => window.alert(english ? "Practice screen is being connected to this task." : "سيتم فتح شاشة التدريب الخاصة بهذه المهمة بعد ربطها بالـAPI.")}><Play size={15}/>{english ? "Start practice" : "ابدئي التدريب"}<ArrowLeft size={15}/></button></aside></div>
+      <div className="pte-task-layout"><div className="pte-task-list">{skill.tasks.map((item, index) => <button key={item.id} className={`pte-task-row ${task.id === item.id ? "is-active" : ""}`} onClick={() => setTaskId(item.id)}><span className="pte-task-number">{String(index + 1).padStart(2, "0")}</span><span className="pte-task-icon">{item.icon}</span><span className="pte-task-copy"><strong>{english ? item.title : item.ar}</strong><small>{english ? item.description : item.description}</small></span><span className="pte-task-time"><Clock3 size={13}/>{item.time}</span><ChevronLeft size={16}/></button>)}</div><aside className="pte-task-preview"><span className="pte-preview-icon">{task.icon}</span><span className="eyebrow">{skill.title.toUpperCase()}</span><h3>{english ? task.title : task.ar}</h3><p>{task.description}</p><div className="pte-preview-meta"><span><Timer size={14}/>{task.time}</span><span><BadgeCheck size={14}/>{english ? "Instant feedback" : "تصحيح فوري"}</span></div><button className="primary-cta" onClick={() => onStartTask(task.id)}><Play size={15}/>{english ? "Start practice" : "ابدئي التدريب"}<ArrowLeft size={15}/></button></aside></div>
     </section>
   </main>;
 }
@@ -560,9 +619,9 @@ export default function App() {
     } catch { setNotice("يمكنك فتح المنصة الآن؛ المسارات ستظهر بعد اكتمال الاتصال."); }
   }
   async function loadDashboard() { try { const current = await api<DashboardData>("/learning/dashboard", {}, true); setDashboard(current); return current; } catch { setDashboard(null); return null; } }
-  async function refresh() { setLoading(true); setBootFailed(false); try { await loadPublic(); const sessionCheck = Promise.race([supabase.auth.getSession(), new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("AUTH_TIMEOUT")), 3000))]); try { const { data } = await sessionCheck; const saved = initialRoute.current; if (data.session) { const current = await loadDashboard(); if (current) { if (saved.view === "lesson" && saved.lessonId) { if (saved.courseSlug) await openCourse(saved.courseSlug); await openLesson(saved.lessonId); } else if (saved.view === "course" && saved.courseSlug) await openCourse(saved.courseSlug); else if (["dashboard", "admin", "placement", "games", "pte", "membership", "courses"].includes(saved.view || "")) setView(saved.view as View); else setView("dashboard"); } } else if (saved.view === "course" && saved.courseSlug) { await openCourse(saved.courseSlug); } } catch { /* Public landing remains usable if auth refresh is slow. */ } } catch { setNotice("تعذر تحميل بعض بيانات المنصة. حاولي التحديث."); setBootFailed(true); } finally { setLoading(false); } }
+  async function refresh() { setLoading(true); setBootFailed(false); try { await loadPublic(); const sessionCheck = Promise.race([supabase.auth.getSession(), new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("AUTH_TIMEOUT")), 3000))]); try { const { data } = await sessionCheck; const saved = initialRoute.current; if (data.session) { const current = await loadDashboard(); if (current) { if (saved.view === "lesson" && saved.lessonId) { if (saved.courseSlug) await openCourse(saved.courseSlug); await openLesson(saved.lessonId); } else if (saved.view === "course" && saved.courseSlug) await openCourse(saved.courseSlug); else if (["dashboard", "admin", "placement", "games", "pte", "pte-repeat", "membership", "courses"].includes(saved.view || "")) setView(saved.view as View); else setView("dashboard"); } } else if (saved.view === "course" && saved.courseSlug) { await openCourse(saved.courseSlug); } } catch { /* Public landing remains usable if auth refresh is slow. */ } } catch { setNotice("تعذر تحميل بعض بيانات المنصة. حاولي التحديث."); setBootFailed(true); } finally { setLoading(false); } }
   useEffect(() => { void refresh(); const { data: { subscription } } = supabase.auth.onAuthStateChange(() => { void loadDashboard(); }); return () => subscription.unsubscribe(); }, []);
-  async function navigate(next: View) { if (["dashboard", "admin", "placement", "pte"].includes(next) && !dashboard) { setAuthOpen(true); return; } if (next === "admin" && dashboard?.profile.role !== "admin") return; setView(next); }
+  async function navigate(next: View) { if (["dashboard", "admin", "placement", "pte", "pte-repeat"].includes(next) && !dashboard) { setAuthOpen(true); return; } if (next === "admin" && dashboard?.profile.role !== "admin") return; setView(next); }
   async function openCourse(slug: string) {
     // Version the public course cache so editorial updates cannot leave the
     // course card out of sync with the lesson screen.
@@ -591,6 +650,6 @@ export default function App() {
   if (!settings || bootFailed) return localize(<div className="startup-error"><span className="brand-mark">H<span>2</span>S</span><h1>تعذر فتح المنصة الآن</h1><p>تحققي من اتصالك بالإنترنت ثم أعيدي المحاولة.</p><button className="primary-cta" onClick={() => void refresh()}><RefreshCcw size={16}/> إعادة المحاولة</button></div>);
   if (view === "landing") return localize(<>{notice && <p className="global-notice">{notice}</p>}<Landing courses={courses} settings={settings} onAuth={() => setAuthOpen(true)} onCourses={() => setView("courses")} onCourse={openCourse} onMembership={() => setView("membership")}/>{authOpen && <AuthDialog onClose={() => setAuthOpen(false)} onReady={signedIn}/>}</>);
   if (view === "lesson" && lesson) return localize(<><PlatformRail active="courses" dashboard={dashboard} onNavigate={navigate} onAuth={() => setAuthOpen(true)} onLogout={logout}/><div className="platform-shell"><LessonScreen data={lesson} onBack={() => setView(course ? "course" : "dashboard")} onFinished={async () => { await loadDashboard(); setView("dashboard"); }}/></div></>);
-  const content = view === "games" ? <VocabularyGames onBack={() => setView(dashboard ? "dashboard" : "courses")}/> : view === "pte" && dashboard ? <PteSelector onBack={() => setView("dashboard")}/> : view === "placement" && dashboard ? <PlacementScreen onBack={() => setView("dashboard")} onComplete={async () => { await loadDashboard(); setView("dashboard"); }}/> : view === "dashboard" && dashboard ? <Dashboard dashboard={dashboard} onCourse={openCourse} onLesson={openLesson} onNavigate={navigate}/> : view === "courses" ? <Courses courses={courses} dashboard={dashboard} onCourse={openCourse} loadingSlug={courseLoading}/> : view === "course" && course ? <CourseScreen course={course} dashboard={dashboard} onBack={() => setView("courses")} onLesson={openLesson} onMembership={() => setView("membership")}/> : view === "membership" ? <Membership settings={settings} dashboard={dashboard} onAuth={() => setAuthOpen(true)} onRefresh={refresh}/> : view === "admin" && dashboard?.profile.role === "admin" ? <AdminStudio dashboard={dashboard} settings={settings} onBack={() => setView("dashboard")} onRefresh={refresh}/> : <Courses courses={courses} dashboard={dashboard} onCourse={openCourse} loadingSlug={courseLoading}/>;
+  const content = view === "games" ? <VocabularyGames onBack={() => setView(dashboard ? "dashboard" : "courses")}/> : view === "pte-repeat" && dashboard ? <PteRepeatSentence onBack={() => setView("pte")}/> : view === "pte" && dashboard ? <PteSelector onBack={() => setView("dashboard")} onStartTask={(taskId) => { if (taskId === "repeat_sentence") setView("pte-repeat"); else window.alert("This task screen will be connected next."); }}/> : view === "placement" && dashboard ? <PlacementScreen onBack={() => setView("dashboard")} onComplete={async () => { await loadDashboard(); setView("dashboard"); }}/> : view === "dashboard" && dashboard ? <Dashboard dashboard={dashboard} onCourse={openCourse} onLesson={openLesson} onNavigate={navigate}/> : view === "courses" ? <Courses courses={courses} dashboard={dashboard} onCourse={openCourse} loadingSlug={courseLoading}/> : view === "course" && course ? <CourseScreen course={course} dashboard={dashboard} onBack={() => setView("courses")} onLesson={openLesson} onMembership={() => setView("membership")}/> : view === "membership" ? <Membership settings={settings} dashboard={dashboard} onAuth={() => setAuthOpen(true)} onRefresh={refresh}/> : view === "admin" && dashboard?.profile.role === "admin" ? <AdminStudio dashboard={dashboard} settings={settings} onBack={() => setView("dashboard")} onRefresh={refresh}/> : <Courses courses={courses} dashboard={dashboard} onCourse={openCourse} loadingSlug={courseLoading}/>;
   return localize(<><PlatformRail active={view} dashboard={dashboard} onNavigate={navigate} onAuth={() => setAuthOpen(true)} onLogout={logout}/><div className="platform-shell">{notice && <p className="global-notice">{notice}</p>}{content}</div>{authOpen && <AuthDialog onClose={() => setAuthOpen(false)} onReady={signedIn}/>}</>);
 }

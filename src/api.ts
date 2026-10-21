@@ -30,6 +30,50 @@ export async function privateAudioUrl(activityId: string): Promise<string> {
   return result.signed_url;
 }
 
+export type RepeatSentenceQuestion = {
+  id: string;
+  question_type: "repeat_sentence";
+  prompt: string;
+  reference_text: string;
+  audio_url: string | null;
+  audio_duration_ms: number | null;
+  estimated_time_seconds: number;
+};
+
+export type RepeatSentenceResult = {
+  attempt_id: string;
+  response_id: string;
+  score: {
+    overall_score: number;
+    trait_scores: { content: number; oral_fluency: number; pronunciation: null };
+    feedback: { transcript: string; missing_words: string[]; extra_words: string[]; message: string };
+    engine: "deterministic";
+    engine_version: string;
+  };
+  note: string;
+};
+
+async function pteApi<T>(path: string, init: RequestInit = {}): Promise<T> {
+  const { data } = await supabase.auth.getSession();
+  if (!data.session?.access_token) throw new ApiError(401, "SIGN_IN_REQUIRED");
+  const headers = new Headers(init.headers);
+  if (init.body && !headers.has("Content-Type")) headers.set("Content-Type", "application/json");
+  headers.set("Authorization", `Bearer ${data.session.access_token}`);
+  const base = `${String(import.meta.env.VITE_SUPABASE_URL).replace(/\/+$/, "")}/functions/v1/pte-repeat-api`;
+  const response = await fetch(`${base}${path.startsWith("/") ? path : `/${path}`}`, { ...init, headers });
+  const payload = await response.json().catch(() => ({}));
+  if (!response.ok) throw new ApiError(response.status, typeof payload?.error === "string" ? payload.error : "REQUEST_FAILED");
+  return payload as T;
+}
+
+export function getRepeatSentenceQuestion() {
+  return pteApi<RepeatSentenceQuestion>("/question");
+}
+
+export function submitRepeatSentence(payload: { question_id: string; attempt_id?: string; transcript: string; duration_ms?: number }) {
+  return pteApi<RepeatSentenceResult>("/score", { method: "POST", body: JSON.stringify(payload) });
+}
+
 export async function couponAdmin<T>(method: "GET" | "POST", body?: any): Promise<T> {
   const { data } = await supabase.auth.getSession();
   if (!data.session?.access_token) throw new ApiError(401, "SIGN_IN_REQUIRED");
