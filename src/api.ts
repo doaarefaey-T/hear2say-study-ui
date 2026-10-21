@@ -74,6 +74,36 @@ export function submitRepeatSentence(payload: { question_id: string; attempt_id?
   return pteApi<RepeatSentenceResult>("/score", { method: "POST", body: JSON.stringify(payload) });
 }
 
+export type DescribeImageQuestion = {
+  id: string;
+  question_type: "describe_image";
+  prompt: string;
+  prompt_text: string;
+  chart: { title: string; unit: string; labels: string[]; values: number[]; trend: string };
+  estimated_time_seconds: number;
+};
+
+export type DescribeImageResult = {
+  attempt_id: string;
+  response_id: string;
+  score: {
+    overall_score: number;
+    trait_scores: { content: number; oral_fluency: number; pronunciation: null; task_achievement: number };
+    feedback: { transcript: string; covered_points: Array<{ point: string; covered: boolean }>; message: string };
+    engine: "deterministic";
+    engine_version: string;
+  };
+  note: string;
+};
+
+export function getDescribeImageQuestion() {
+  return pteApi<DescribeImageQuestion>("/describe-image/question");
+}
+
+export function submitDescribeImage(payload: { question_id: string; attempt_id?: string; transcript: string; duration_ms?: number }) {
+  return pteApi<DescribeImageResult>("/describe-image/score", { method: "POST", body: JSON.stringify(payload) });
+}
+
 export async function couponAdmin<T>(method: "GET" | "POST", body?: any): Promise<T> {
   const { data } = await supabase.auth.getSession();
   if (!data.session?.access_token) throw new ApiError(401, "SIGN_IN_REQUIRED");
