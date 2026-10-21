@@ -23,7 +23,7 @@ type PlacementQuestion = { id: string; skill: "grammar" | "vocabulary" | "readin
 type PlacementResult = { id: string; total_score: number; recommended_level: "Starter" | "A1" | "A2" | "B1" | "B2" | "C1" | "C2"; skill_scores: Record<string, number>; completed_at: string };
 type LessonData = { course: { id: string; slug: string; title: string; level: string }; unit: { id: string; unit_number: number; title: string; focus: string; grammar_topic: string; target_words: string[] }; lesson: { id: string; slug: string; title: string; description: string; learning_objective: string; estimated_minutes: number }; unit_audio_activity_id?: string | null; activities: Activity[]; progress: Progress };
 type AttemptResult = { result: { score: number; correct: boolean; completed: boolean; feedback: any }; progress: Progress };
-type View = "landing" | "dashboard" | "courses" | "course" | "lesson" | "membership" | "placement" | "games" | "admin";
+type View = "landing" | "dashboard" | "courses" | "course" | "lesson" | "membership" | "placement" | "games" | "pte" | "admin";
 type AuthMode = "login" | "signup" | "reset";
 
 const errorArabic: Record<string, string> = {
@@ -88,7 +88,7 @@ function PlatformRail({ active, dashboard, onNavigate, onAuth, onLogout }: { act
   const user = dashboard?.profile;
   const items: Array<{ id: View; label: string; icon: React.ReactNode }> = [
     { id: "dashboard", label: t.home, icon: <Home size={18}/> }, { id: "courses", label: t.courses, icon: <LibraryBig size={18}/> },
-    { id: "membership", label: t.membership, icon: <TicketPercent size={18}/> }, { id: "games", label: t.games, icon: <Gamepad2 size={18}/> }, { id: "placement", label: t.placement, icon: <ClipboardCheck size={18}/> },
+    { id: "membership", label: t.membership, icon: <TicketPercent size={18}/> }, { id: "games", label: t.games, icon: <Gamepad2 size={18}/> }, { id: "pte", label: "PTE Practice", icon: <Mic size={18}/> }, { id: "placement", label: t.placement, icon: <ClipboardCheck size={18}/> },
   ];
   return <aside className="platform-rail"><button className="rail-brand" onClick={() => onNavigate(user ? "dashboard" : "landing")}><span className="brand-mark">H<span>2</span>S</span><span><strong>HEAR2SAY</strong><small>LEARNING</small></span></button>
     <nav>{items.map((item) => <button className={active === item.id ? "rail-link is-active" : "rail-link"} key={item.id} onClick={() => user ? onNavigate(item.id) : onAuth()}>{item.icon}<span>{item.label}</span></button>)}
@@ -351,6 +351,77 @@ function VocabularyGames({ onBack }: { onBack: () => void }) {
   const options = mode === "meaning" ? [item.meaning, ...item.distractors] : [item.word, ...item.sentenceDistractors];
   return <main className="platform-main games-page"><Topbar title={labels.title} subtitle="GAMIFIED VOCABULARY" dashboard={null} onMenu={() => {}}/><button className="back-inline" onClick={onBack}><ArrowRight size={16}/>{labels.back}</button><section className="game-hero"><div><span className="eyebrow"><Gamepad2 size={14}/> {labels.round}</span><h2>{labels.subtitle}</h2><p>{en ? "Fast rounds, useful examples, and instant feedback — no pressure." : "جولات قصيرة، أمثلة مفيدة، وتصحيح فوري — بدون ضغط."}</p></div><div className="game-score"><Trophy size={18}/><b>{score}</b><small>{labels.points}</small></div></section><div className="game-mode-tabs">{([["meaning",labels.meaning],["sentence",labels.sentence],["order",labels.order]] as const).map(([id,label]) => <button key={id} className={mode === id ? "is-active" : ""} onClick={() => { setMode(id); setAnswer(null); setOrdered([]); }}>{id === "meaning" ? <BookOpen size={16}/> : id === "sentence" ? <Zap size={16}/> : <Check size={16}/>} {label}</button>)}</div><div className="game-progress-row"><span>{index + 1} / {roundWords.length}</span><div className="game-progress"><i style={{ width: `${((index + 1) / roundWords.length) * 100}%` }}/></div><span className="game-hearts">{[0,1,2].map((heart) => <Heart key={heart} size={16} fill={heart < hearts ? "currentColor" : "none"}/>)}</span></div><section className="game-card"><div className="game-card-top"><span className="game-badge"><Zap size={14}/> +{10 + streak * 2}</span><span><Timer size={14}/> 45 sec</span></div><div className="game-word"><small>{mode === "sentence" ? (en ? "COMPLETE THE SENTENCE" : "أكملي الجملة") : en ? "TARGET WORD" : "الكلمة المستهدفة"}</small><h3>{mode === "sentence" ? "_____" : item.word}</h3><p>{mode === "sentence" ? item.example.replace(item.word, "_____ ") : labels[mode === "meaning" ? "meaningPrompt" : "orderPrompt"]}</p></div>{mode !== "order" && <div className="game-options">{(mode === "meaning" ? [item.meaning, ...item.distractors] : [item.word, ...item.sentenceDistractors]).sort((a,b) => a.localeCompare(b)).map((option) => <button key={option} className={answer ? (option === (mode === "meaning" ? item.meaning : item.word) ? "is-correct" : "is-muted") : ""} onClick={() => check(option)} disabled={Boolean(answer)}>{option}</button>)}</div>}{mode === "order" && <><div className="order-answer">{ordered.length ? ordered.map((token) => <button key={token} onClick={() => setOrdered((current) => current.filter((value) => value !== token))}>{token}</button>) : <span>{labels.orderPrompt}</span>}</div><div className="game-token-bank">{shuffled.filter((token) => !ordered.includes(token)).map((token) => <button key={token} onClick={() => setOrdered((current) => [...current, token])}>{token}</button>)}</div><button className="primary-cta game-check" disabled={!ordered.length} onClick={() => check(ordered.join(" "))}><Check size={16}/> {en ? "Check order" : "تحققي من الترتيب"}</button></>}{answer && <div className={`game-feedback ${answer}`}><strong>{answer === "correct" ? labels.correct : labels.wrong}</strong><p><b>{labels.example}:</b> {item.example}</p><small><b>{labels.definition}:</b> {item.meaning}</small></div>}{answer && <button className="outline-cta game-next" onClick={next}>{index + 1 === roundWords.length ? labels.finish : labels.next}<ArrowLeft size={15}/></button>}</section></main>;
 }
+
+type PteSkillId = "speaking" | "writing" | "reading" | "listening";
+type PteTask = { id: string; title: string; ar: string; description: string; time: string; icon: ReactNode };
+const pteSkills: Array<{ id: PteSkillId; title: string; ar: string; description: string; tone: string; icon: ReactNode; tasks: PteTask[] }> = [
+  { id: "speaking", title: "Speaking", ar: "التحدث", description: "Build clear, fluent answers with guided recording practice.", tone: "pte-skill-speaking", icon: <Mic size={20}/>, tasks: [
+    { id: "read_aloud", title: "Read Aloud", ar: "قراءة بصوت عالٍ", description: "Read a passage with accurate pronunciation and natural pauses.", time: "40 sec", icon: <BookOpen size={17}/> },
+    { id: "repeat_sentence", title: "Repeat Sentence", ar: "تكرار الجملة", description: "Listen once, then repeat the sentence accurately.", time: "15 sec", icon: <Headphones size={17}/> },
+    { id: "describe_image", title: "Describe Image", ar: "وصف صورة", description: "Organize the main trend and supporting details.", time: "40 sec", icon: <BarChart3 size={17}/> },
+    { id: "retell_lecture", title: "Retell Lecture", ar: "إعادة شرح محاضرة", description: "Retell the central ideas in a clear sequence.", time: "40 sec", icon: <ClipboardCheck size={17}/> },
+    { id: "answer_short_question", title: "Answer Short Question", ar: "إجابة قصيرة", description: "Give a direct spoken answer without extra explanation.", time: "10 sec", icon: <CircleHelp size={17}/> },
+  ] },
+  { id: "writing", title: "Writing", ar: "الكتابة", description: "Plan, write, and improve answers with focused feedback.", tone: "pte-skill-writing", icon: <BookOpen size={20}/>, tasks: [
+    { id: "summarize_written_text", title: "Summarize Written Text", ar: "تلخيص نص مكتوب", description: "Reduce a passage to one accurate sentence.", time: "10 min", icon: <FileTextIcon/> },
+    { id: "write_essay", title: "Write Essay", ar: "كتابة مقال", description: "Develop a position with organized reasons and examples.", time: "20 min", icon: <ClipboardCheck size={17}/> },
+  ] },
+  { id: "reading", title: "Reading", ar: "القراءة", description: "Read for meaning, structure, vocabulary, and evidence.", tone: "pte-skill-reading", icon: <LibraryBig size={20}/>, tasks: [
+    { id: "reading_fill_blanks", title: "Reading Fill in the Blanks", ar: "ملء فراغات القراءة", description: "Use grammar, meaning, and collocation to complete the text.", time: "1 min", icon: <Check size={17}/> },
+    { id: "reading_reorder_paragraphs", title: "Reorder Paragraphs", ar: "ترتيب الفقرات", description: "Follow references and logical connections between sentences.", time: "2 min", icon: <ArrowRight size={17}/> },
+    { id: "reading_mcq_single", title: "Multiple Choice · Single", ar: "اختيار من متعدد · إجابة واحدة", description: "Choose the answer directly supported by the passage.", time: "1 min", icon: <CircleHelp size={17}/> },
+    { id: "reading_mcq_multiple", title: "Multiple Choice · Multiple", ar: "اختيار من متعدد · أكثر من إجابة", description: "Select every statement supported by the reading.", time: "1 min", icon: <CheckCircle2 size={17}/> },
+  ] },
+  { id: "listening", title: "Listening", ar: "الاستماع", description: "Listen for meaning, detail, order, and exact wording.", tone: "pte-skill-listening", icon: <Headphones size={20}/>, tasks: [
+    { id: "summarize_spoken_text", title: "Summarize Spoken Text", ar: "تلخيص كلام مسموع", description: "Capture the central claim and key supporting details.", time: "10 min", icon: <ClipboardCheck size={17}/> },
+    { id: "listening_fill_blanks", title: "Listening Fill in the Blanks", ar: "ملء فراغات الاستماع", description: "Complete the transcript with the words you hear.", time: "1.5 min", icon: <Headphones size={17}/> },
+    { id: "highlight_incorrect_words", title: "Highlight Incorrect Words", ar: "تحديد الكلمات المختلفة", description: "Compare the recording with the displayed transcript.", time: "1 min", icon: <Zap size={17}/> },
+    { id: "select_missing_word", title: "Select Missing Word", ar: "اختيار الكلمة الناقصة", description: "Choose the ending that completes the recording.", time: "30 sec", icon: <Check size={17}/> },
+    { id: "listening_mcq_single", title: "Multiple Choice · Single", ar: "اختيار من متعدد · إجابة واحدة", description: "Choose the answer supported by the recording.", time: "1 min", icon: <CircleHelp size={17}/> },
+    { id: "listening_mcq_multiple", title: "Multiple Choice · Multiple", ar: "اختيار من متعدد · أكثر من إجابة", description: "Select all statements that match the audio.", time: "1 min", icon: <CheckCircle2 size={17}/> },
+    { id: "write_from_dictation", title: "Write from Dictation", ar: "الكتابة من الإملاء", description: "Write the complete sentence exactly as heard.", time: "30 sec", icon: <PenLineIcon/> },
+  ] },
+];
+
+function FileTextIcon() { return <span className="pte-inline-icon">Aa</span>; }
+function PenLineIcon() { return <span className="pte-inline-icon">✎</span>; }
+
+function PteSelector({ onBack }: { onBack: () => void }) {
+  const { locale } = useLocale();
+  const english = locale === "en";
+  const [skillId, setSkillId] = useState<PteSkillId>("speaking");
+  const [taskId, setTaskId] = useState("read_aloud");
+  const skill = pteSkills.find((item) => item.id === skillId) || pteSkills[0];
+  const task = skill.tasks.find((item) => item.id === taskId) || skill.tasks[0];
+
+  function chooseSkill(id: PteSkillId) {
+    const next = pteSkills.find((item) => item.id === id) || pteSkills[0];
+    setSkillId(id);
+    setTaskId(next.tasks[0].id);
+  }
+
+  return <main className="platform-main pte-selector-page">
+    <Topbar title={english ? "PTE Practice" : "تدريبات PTE"} subtitle="PTE ACADEMIC" dashboard={null} onMenu={() => {}}/>
+    <button className="back-inline" onClick={onBack}><ArrowRight size={16}/>{english ? "Back to dashboard" : "العودة إلى لوحة الطالب"}</button>
+    <section className="pte-selector-hero">
+      <div>
+        <span className="eyebrow"><Sparkles size={13}/> {english ? "CHOOSE YOUR NEXT PRACTICE" : "اختاري تدريبك التالي"}</span>
+        <h2>{english ? "Practice one task at a time." : "تدرّبي على مهمة واحدة في كل مرة."}</h2>
+        <p>{english ? "Start with a skill, choose a task type, and get focused feedback after every attempt." : "ابدئي بالمهارة، ثم اختاري نوع المهمة، واحصلي على تصحيح مركز بعد كل محاولة."}</p>
+      </div>
+      <div className="pte-selector-stat"><strong>18</strong><span>{english ? "task types" : "نوع مهمة"}</span><small>{english ? "across four skills" : "على أربع مهارات"}</small></div>
+    </section>
+    <section className="pte-skill-section">
+      <div className="section-label"><div><span className="eyebrow">01 · SKILL</span><h2>{english ? "Choose a skill" : "اختاري المهارة"}</h2></div><span>{english ? "Your practice path" : "مسار تدريبك"}</span></div>
+      <div className="pte-skill-grid">{pteSkills.map((item) => <button key={item.id} className={`pte-skill-card ${item.tone} ${skillId === item.id ? "is-active" : ""}`} onClick={() => chooseSkill(item.id)}><span className="pte-skill-icon">{item.icon}</span><strong>{english ? item.title : item.ar}</strong><small>{english ? item.description : `${item.ar} · ${item.tasks.length} مهام`}</small><b>{item.tasks.length} {english ? "tasks" : "مهام"}</b></button>)}</div>
+    </section>
+    <section className="pte-task-section">
+      <div className="section-label"><div><span className="eyebrow">02 · TASK TYPE</span><h2>{english ? `${skill.title} task types` : `أنواع مهام ${skill.ar}`}</h2></div><span>{skill.tasks.length} {english ? "available" : "متاحة"}</span></div>
+      <div className="pte-task-layout"><div className="pte-task-list">{skill.tasks.map((item, index) => <button key={item.id} className={`pte-task-row ${task.id === item.id ? "is-active" : ""}`} onClick={() => setTaskId(item.id)}><span className="pte-task-number">{String(index + 1).padStart(2, "0")}</span><span className="pte-task-icon">{item.icon}</span><span className="pte-task-copy"><strong>{english ? item.title : item.ar}</strong><small>{english ? item.description : item.description}</small></span><span className="pte-task-time"><Clock3 size={13}/>{item.time}</span><ChevronLeft size={16}/></button>)}</div><aside className="pte-task-preview"><span className="pte-preview-icon">{task.icon}</span><span className="eyebrow">{skill.title.toUpperCase()}</span><h3>{english ? task.title : task.ar}</h3><p>{task.description}</p><div className="pte-preview-meta"><span><Timer size={14}/>{task.time}</span><span><BadgeCheck size={14}/>{english ? "Instant feedback" : "تصحيح فوري"}</span></div><button className="primary-cta" onClick={() => window.alert(english ? "Practice screen is being connected to this task." : "سيتم فتح شاشة التدريب الخاصة بهذه المهمة بعد ربطها بالـAPI.")}><Play size={15}/>{english ? "Start practice" : "ابدئي التدريب"}<ArrowLeft size={15}/></button></aside></div>
+    </section>
+  </main>;
+}
+
 const localPlacementQuestions: PlacementQuestion[] = [
   { id: "local-grammar", skill: "grammar", kind: "choice", cefr_level: "B1", adaptive_key: "b", prompt: "If I ___ earlier, I would have caught the train.", options: [{ id: "a", text: "leave" }, { id: "b", text: "had left" }, { id: "c", text: "will leave" }] },
   { id: "local-vocabulary", skill: "vocabulary", kind: "choice", cefr_level: "B1", adaptive_key: "a", prompt: "Choose the closest meaning of 'reliable'.", options: [{ id: "a", text: "easy to trust" }, { id: "b", text: "very expensive" }, { id: "c", text: "hard to see" }] },
@@ -489,9 +560,9 @@ export default function App() {
     } catch { setNotice("يمكنك فتح المنصة الآن؛ المسارات ستظهر بعد اكتمال الاتصال."); }
   }
   async function loadDashboard() { try { const current = await api<DashboardData>("/learning/dashboard", {}, true); setDashboard(current); return current; } catch { setDashboard(null); return null; } }
-  async function refresh() { setLoading(true); setBootFailed(false); try { await loadPublic(); const sessionCheck = Promise.race([supabase.auth.getSession(), new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("AUTH_TIMEOUT")), 3000))]); try { const { data } = await sessionCheck; const saved = initialRoute.current; if (data.session) { const current = await loadDashboard(); if (current) { if (saved.view === "lesson" && saved.lessonId) { if (saved.courseSlug) await openCourse(saved.courseSlug); await openLesson(saved.lessonId); } else if (saved.view === "course" && saved.courseSlug) await openCourse(saved.courseSlug); else if (["dashboard", "admin", "placement", "games", "membership", "courses"].includes(saved.view || "")) setView(saved.view as View); else setView("dashboard"); } } else if (saved.view === "course" && saved.courseSlug) { await openCourse(saved.courseSlug); } } catch { /* Public landing remains usable if auth refresh is slow. */ } } catch { setNotice("تعذر تحميل بعض بيانات المنصة. حاولي التحديث."); setBootFailed(true); } finally { setLoading(false); } }
+  async function refresh() { setLoading(true); setBootFailed(false); try { await loadPublic(); const sessionCheck = Promise.race([supabase.auth.getSession(), new Promise<never>((_, reject) => window.setTimeout(() => reject(new Error("AUTH_TIMEOUT")), 3000))]); try { const { data } = await sessionCheck; const saved = initialRoute.current; if (data.session) { const current = await loadDashboard(); if (current) { if (saved.view === "lesson" && saved.lessonId) { if (saved.courseSlug) await openCourse(saved.courseSlug); await openLesson(saved.lessonId); } else if (saved.view === "course" && saved.courseSlug) await openCourse(saved.courseSlug); else if (["dashboard", "admin", "placement", "games", "pte", "membership", "courses"].includes(saved.view || "")) setView(saved.view as View); else setView("dashboard"); } } else if (saved.view === "course" && saved.courseSlug) { await openCourse(saved.courseSlug); } } catch { /* Public landing remains usable if auth refresh is slow. */ } } catch { setNotice("تعذر تحميل بعض بيانات المنصة. حاولي التحديث."); setBootFailed(true); } finally { setLoading(false); } }
   useEffect(() => { void refresh(); const { data: { subscription } } = supabase.auth.onAuthStateChange(() => { void loadDashboard(); }); return () => subscription.unsubscribe(); }, []);
-  async function navigate(next: View) { if (["dashboard", "admin", "placement"].includes(next) && !dashboard) { setAuthOpen(true); return; } if (next === "admin" && dashboard?.profile.role !== "admin") return; setView(next); }
+  async function navigate(next: View) { if (["dashboard", "admin", "placement", "pte"].includes(next) && !dashboard) { setAuthOpen(true); return; } if (next === "admin" && dashboard?.profile.role !== "admin") return; setView(next); }
   async function openCourse(slug: string) {
     // Version the public course cache so editorial updates cannot leave the
     // course card out of sync with the lesson screen.
@@ -520,6 +591,6 @@ export default function App() {
   if (!settings || bootFailed) return localize(<div className="startup-error"><span className="brand-mark">H<span>2</span>S</span><h1>تعذر فتح المنصة الآن</h1><p>تحققي من اتصالك بالإنترنت ثم أعيدي المحاولة.</p><button className="primary-cta" onClick={() => void refresh()}><RefreshCcw size={16}/> إعادة المحاولة</button></div>);
   if (view === "landing") return localize(<>{notice && <p className="global-notice">{notice}</p>}<Landing courses={courses} settings={settings} onAuth={() => setAuthOpen(true)} onCourses={() => setView("courses")} onCourse={openCourse} onMembership={() => setView("membership")}/>{authOpen && <AuthDialog onClose={() => setAuthOpen(false)} onReady={signedIn}/>}</>);
   if (view === "lesson" && lesson) return localize(<><PlatformRail active="courses" dashboard={dashboard} onNavigate={navigate} onAuth={() => setAuthOpen(true)} onLogout={logout}/><div className="platform-shell"><LessonScreen data={lesson} onBack={() => setView(course ? "course" : "dashboard")} onFinished={async () => { await loadDashboard(); setView("dashboard"); }}/></div></>);
-  const content = view === "games" ? <VocabularyGames onBack={() => setView(dashboard ? "dashboard" : "courses")}/> : view === "placement" && dashboard ? <PlacementScreen onBack={() => setView("dashboard")} onComplete={async () => { await loadDashboard(); setView("dashboard"); }}/> : view === "dashboard" && dashboard ? <Dashboard dashboard={dashboard} onCourse={openCourse} onLesson={openLesson} onNavigate={navigate}/> : view === "courses" ? <Courses courses={courses} dashboard={dashboard} onCourse={openCourse} loadingSlug={courseLoading}/> : view === "course" && course ? <CourseScreen course={course} dashboard={dashboard} onBack={() => setView("courses")} onLesson={openLesson} onMembership={() => setView("membership")}/> : view === "membership" ? <Membership settings={settings} dashboard={dashboard} onAuth={() => setAuthOpen(true)} onRefresh={refresh}/> : view === "admin" && dashboard?.profile.role === "admin" ? <AdminStudio dashboard={dashboard} settings={settings} onBack={() => setView("dashboard")} onRefresh={refresh}/> : <Courses courses={courses} dashboard={dashboard} onCourse={openCourse} loadingSlug={courseLoading}/>;
+  const content = view === "games" ? <VocabularyGames onBack={() => setView(dashboard ? "dashboard" : "courses")}/> : view === "pte" && dashboard ? <PteSelector onBack={() => setView("dashboard")}/> : view === "placement" && dashboard ? <PlacementScreen onBack={() => setView("dashboard")} onComplete={async () => { await loadDashboard(); setView("dashboard"); }}/> : view === "dashboard" && dashboard ? <Dashboard dashboard={dashboard} onCourse={openCourse} onLesson={openLesson} onNavigate={navigate}/> : view === "courses" ? <Courses courses={courses} dashboard={dashboard} onCourse={openCourse} loadingSlug={courseLoading}/> : view === "course" && course ? <CourseScreen course={course} dashboard={dashboard} onBack={() => setView("courses")} onLesson={openLesson} onMembership={() => setView("membership")}/> : view === "membership" ? <Membership settings={settings} dashboard={dashboard} onAuth={() => setAuthOpen(true)} onRefresh={refresh}/> : view === "admin" && dashboard?.profile.role === "admin" ? <AdminStudio dashboard={dashboard} settings={settings} onBack={() => setView("dashboard")} onRefresh={refresh}/> : <Courses courses={courses} dashboard={dashboard} onCourse={openCourse} loadingSlug={courseLoading}/>;
   return localize(<><PlatformRail active={view} dashboard={dashboard} onNavigate={navigate} onAuth={() => setAuthOpen(true)} onLogout={logout}/><div className="platform-shell">{notice && <p className="global-notice">{notice}</p>}{content}</div>{authOpen && <AuthDialog onClose={() => setAuthOpen(false)} onReady={signedIn}/>}</>);
 }
